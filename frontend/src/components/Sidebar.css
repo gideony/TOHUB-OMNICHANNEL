@@ -1,0 +1,51 @@
+.sidebar {
+  width: 250px;
+  background-color: var(--secondary);
+  color: white;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-brand {
+  padding: 24px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sidebar-brand h2 {
+  color: var(--primary);
+  font-size: 24px;
+  letter-spacing: 2px;
+}
+
+.sidebar-menu {
+  padding: 20px 0;
+}
+
+.menu-label {
+  font-size: 12px;
+  color: #bdc3c7;
+  padding: 0 20px;
+  margin-bottom: 12px;
+  letter-spacing: 1px;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  color: #ecf0f1;
+  transition: all 0.2s ease;
+}
+
+.menu-item:hover, .menu-item.active {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: var(--primary);
+  border-left: 4px solid var(--primary);
+}
+
+.menu-item span {
+  font-size: 15px;
+  font-weight: 500;
+}
