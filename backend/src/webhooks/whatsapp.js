@@ -1,90 +1,114 @@
-const express = require('express');
-const router = express.Router();
-const supabase = require('../config/supabase');
-const socketConfig = require('../socket/io');
+const supabase = require('../config/supabase')
 
-router.post('/', async (req, res) => {
-  console.log('📨 WhatsApp Webhook recebido:', req.body);
+// Parser para formato SIMPLIFICADO (Semana 1)
+const parseSimplifiedFormat = (body) => {
+  return {
+    from: body.from,
+    message: body.message,
+    timestamp: body.timestamp
+  }
+}
 
-  // Para MVP: formato simplificado
-  // { "message": "Olá", "from": "5585987654321" }
-  const { message, from, timestamp } = req.body;
+// Parser para formato META (Semana 2+)
+const parseMetaFormat = (body) => {
+  const message = body.entry[0].changes[0].value.messages[0]
+  return {
+    from: message.from,
+    message: message.text.body,
+    timestamp: message.timestamp
+  }
+}
 
-  // Responde rápido para o webhook não dar timeout
-  res.json({ received: true });
+// WEBHOOK HANDLER
+const handleWebhook = async (req, res) => {
+  try {
+    const body = req.body
+    console.log('📨 WhatsApp Webhook recebido:', JSON.stringify(body, null, 2))
 
-  if (message && from) {
-    try {
-      // 1. Verifica se o contato existe ou cria
-      let contactId;
-      const { data: contacts, error: contactSearchError } = await supabase
+    // Detectar formato
+    const isMetaFormat = body.object === 'whatsapp_business_account'
+    const parsed = isMetaFormat ? parseMetaFormat(body) : parseSimplifiedFormat(body)
+
+    const { from, message, timestamp } = parsed
+
+    // 1. Buscar ou criar contato
+    let { data: contact, error: contactError } = await supabase
+      .from('contacts')
+      .select()
+      .eq('phone', from)
+      .single()
+
+    if (contactError && contactError.code === 'PGRST116') {
+      // Contato não existe, criar novo
+      const { data: newContact, error: createError } = await supabase
         .from('contacts')
-        .select('id')
-        .eq('phone', from)
-        .eq('source', 'whatsapp')
-        .limit(1);
-
-      if (contactSearchError) {
-        console.error('Erro ao buscar contato:', contactSearchError);
-        return;
-      }
-
-      if (contacts && contacts.length > 0) {
-        contactId = contacts[0].id;
-      } else {
-        // Cria contato novo
-        const { data: newContact, error: insertError } = await supabase
-          .from('contacts')
-          .insert([{
-            phone: from,
-            name: from, // Nome placeholder até que o agente edite ou chegue pela API oficial
-            source: 'whatsapp'
-          }])
-          .select()
-          .single();
-
-        if (insertError) {
-          console.error('Erro ao criar contato:', insertError);
-          return;
-        }
-        contactId = newContact.id;
-      }
-
-      // 2. Salva a mensagem no banco de dados
-      const { data: savedMessage, error: msgError } = await supabase
-        .from('messages')
         .insert([{
-          contact_id: contactId,
-          channel: 'whatsapp',
-          sender_type: 'contact',
-          body: message,
-          direction: 'in',
-          status: 'delivered'
+          phone: from,
+          source: 'whatsapp',
+          name: `WhatsApp ${from}`
         }])
         .select()
-        .single();
+        .single()
 
-      if (msgError) {
-        console.error('Erro ao salvar mensagem:', msgError);
-        return;
-      }
-
-      console.log('✅ Mensagem salva:', savedMessage);
-
-      // 3. Emite evento via Socket.io
-      try {
-        const io = socketConfig.getIo();
-        io.emit('new_message', savedMessage);
-      } catch (ioError) {
-        console.error('Erro ao emitir evento Socket.io:', ioError);
-      }
-
-    } catch (err) {
-      console.error('Erro processando webhook WhatsApp:', err);
+      if (createError) throw createError
+      contact = newContact
+    } else if (contactError) {
+      throw contactError
     }
-  } else {
-    console.log('Webhook payload inválido ou sem message/from. Apenas ignorando.');
-  }
-});
 
-module.exports = router;
+    // 2. Salvar mensagem
+    const { error: msgError } = await supabase
+      .from('messages')
+      .insert([{
+        contact_id: contact.id,
+        channel: 'whatsapp',
+        sender_type: 'contact',
+        sender_id: from,
+        body: message,
+        direction: 'in',
+        created_at: new Date(timestamp * 1000)
+      }])
+
+    if (msgError) throw msgError
+
+    // 3. Emitir evento Socket.io pra agentes
+    const io = req.app.get('io')
+    io.emit('new_message', {
+      contact: {
+        id: contact.id,
+        phone: contact.phone,
+        name: contact.name
+      },
+      message: {
+        body: message,
+        channel: 'whatsapp',
+        timestamp: new Date(timestamp * 1000)
+      }
+    })
+
+    console.log('✅ Mensagem salva e emitida via Socket.io')
+    res.json({ success: true, received: true })
+  } catch (error) {
+    console.error('❌ Erro no webhook:', error.message)
+    res.status(400).json({
+      success: false,
+      error: error.message
+    })
+  }
+}
+
+// VERIFICAÇÃO DE WEBHOOK (Meta exige)
+const verifyWebhook = (req, res) => {
+  const mode = req.query['hub.mode']
+  const token = req.query['hub.verify_token']
+  const challenge = req.query['hub.challenge']
+
+  if (mode === 'subscribe' && token === process.env.WHATSAPP_WEBHOOK_TOKEN) {
+    res.status(200).send(challenge)
+    console.log('✅ Webhook verificado!')
+  } else {
+    res.sendStatus(403)
+  }
+}
+
+module.exports = { handleWebhook, verifyWebhook }

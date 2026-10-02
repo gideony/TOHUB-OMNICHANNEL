@@ -1,14 +1,20 @@
-const { createClient } = require('@supabase/supabase-js');
-const env = require('./env');
+const { createClient } = require('@supabase/supabase-js')
 
-if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
-  console.warn('⚠️ SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY não definidos no .env');
+// Validar variáveis de ambiente
+if (!process.env.SUPABASE_URL) {
+  console.warn('⚠️ SUPABASE_URL não definido (usando placeholder)')
 }
 
-const supabaseUrl = env.SUPABASE_URL || 'https://placeholder.supabase.co';
-const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY || 'placeholder_key';
+if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  console.warn('⚠️ SUPABASE_SERVICE_ROLE_KEY não definido (usando placeholder)')
+}
 
-// Utilizando a service_role_key para o backend ter privilégios administrativos
-const supabase = createClient(supabaseUrl, supabaseKey);
+// Inicializar Supabase
+const supabase = createClient(
+  process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
+  process.env.SUPABASE_SERVICE_ROLE_KEY || 'placeholder_key'
+)
 
-module.exports = supabase;
+console.log('✅ Supabase client inicializado')
+
+module.exports = supabase

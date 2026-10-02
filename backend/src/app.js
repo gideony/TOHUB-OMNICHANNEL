@@ -1,30 +1,49 @@
-const express = require('express');
-const cors = require('cors');
-const env = require('./config/env');
+const express = require('express')
+const cors = require('cors')
 
-// Routes
-const authRoutes = require('./modules/auth/auth.routes');
-const messagesRoutes = require('./modules/atendimentos/messages.routes');
-const whatsappWebhook = require('./webhooks/whatsapp');
+const app = express()
 
-const app = express();
-
+// Middleware
 app.use(cors({
-  origin: env.FRONTEND_URL,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-}));
-app.use(express.json());
+  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  credentials: true
+}))
 
-// Health check
+app.use(express.json())
+
+// Health Check
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date() });
-});
+  res.json({
+    status: 'ok',
+    timestamp: new Date(),
+    environment: process.env.NODE_ENV || 'development'
+  })
+})
 
-// API Routes
-app.use('/auth', authRoutes);
-app.use('/messages', messagesRoutes);
+// Status API
+app.get('/api/status', (req, res) => {
+  res.json({
+    server: 'running',
+    timestamp: new Date(),
+    uptime: process.uptime()
+  })
+})
 
-// Webhooks
-app.use('/webhooks/whatsapp', whatsappWebhook);
+// Importar rotas
+const authRoutes = require('./modules/auth/auth.routes')
+const messagesRoutes = require('./modules/atendimentos/messages.routes')
+const whatsappWebhook = require('./webhooks/whatsapp')
 
-module.exports = app;
+// Registrar rotas
+app.use('/auth', authRoutes)
+app.use('/messages', messagesRoutes)
+
+// GET para verificação de webhook
+app.get('/webhooks/whatsapp', whatsappWebhook.verifyWebhook)
+
+// POST para receber mensagens
+app.post('/webhooks/whatsapp', whatsappWebhook.handleWebhook)
+
+console.log('✅ Todas as rotas registradas')
+
+module.exports = app
