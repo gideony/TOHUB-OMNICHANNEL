@@ -1,0 +1,4 @@
+node_modules/
+jules/backend/node_modules/
+
+.env
